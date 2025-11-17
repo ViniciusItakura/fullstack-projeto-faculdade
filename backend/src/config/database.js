@@ -102,10 +102,33 @@ export async function initDatabase() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS insert_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER,
+      movie_id INTEGER,
+      movie_title TEXT,
+      success INTEGER NOT NULL,
+      error_message TEXT,
+      ip_address TEXT,
+      user_agent TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS token_blacklist (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      token_hash TEXT UNIQUE NOT NULL,
+      expires_at DATETIME NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE INDEX IF NOT EXISTS idx_movies_tmdb_id ON movies(tmdb_id);
     CREATE INDEX IF NOT EXISTS idx_movies_created_by ON movies(created_by);
     CREATE INDEX IF NOT EXISTS idx_search_logs_user_id ON search_logs(user_id);
     CREATE INDEX IF NOT EXISTS idx_auth_logs_username ON auth_logs(username);
+    CREATE INDEX IF NOT EXISTS idx_insert_logs_user_id ON insert_logs(user_id);
+    CREATE INDEX IF NOT EXISTS idx_token_blacklist_hash ON token_blacklist(token_hash);
+    CREATE INDEX IF NOT EXISTS idx_token_blacklist_expires ON token_blacklist(expires_at);
   `);
 
   const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get();

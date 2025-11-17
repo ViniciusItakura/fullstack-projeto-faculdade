@@ -159,3 +159,53 @@ export function logSearch(userId, query, resultsCount, req) {
   });
 }
 
+export function logInsert(userId, movieId, movieTitle, success, errorMessage, req) {
+  const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+  const userAgent = req.get('user-agent') || 'unknown';
+  
+  setImmediate(() => {
+    try {
+      const logDb = getConnection();
+      const insertLog = logDb.prepare(`
+        INSERT INTO insert_logs (user_id, movie_id, movie_title, success, error_message, ip_address, user_agent)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `);
+      
+      insertLog.run(
+        userId || null,
+        movieId || null,
+        movieTitle || null,
+        success ? 1 : 0,
+        errorMessage || null,
+        ip,
+        userAgent
+      );
+    } catch (error) {
+      if (error.message && error.message.includes('locked')) {
+        setTimeout(() => {
+          try {
+            const retryDb = getConnection();
+            const insertLog = retryDb.prepare(`
+              INSERT INTO insert_logs (user_id, movie_id, movie_title, success, error_message, ip_address, user_agent)
+              VALUES (?, ?, ?, ?, ?, ?, ?)
+            `);
+            insertLog.run(
+              userId || null,
+              movieId || null,
+              movieTitle || null,
+              success ? 1 : 0,
+              errorMessage || null,
+              ip,
+              userAgent
+            );
+          } catch (retryError) {
+            logger.warn('Falha ao registrar log de inserção após retry:', retryError.message);
+          }
+        }, 200);
+      } else {
+        logger.warn('Erro ao registrar log de inserção:', error.message);
+      }
+    }
+  });
+}
+

@@ -1,5 +1,6 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { body, validationResult } from 'express-validator';
 import { User } from '../models/User.js';
 import { logAuth, logger } from '../config/logger.js';
@@ -27,6 +28,58 @@ function sanitizeInput(str) {
     .replace(/[<>]/g, '')
     .replace(/javascript:/gi, '')
     .replace(/on\w+=/gi, '');
+}
+
+function hashToken(token) {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+function isTokenBlacklisted(tokenHash) {
+  try {
+    const db = getConnection();
+    
+    const expiredTokens = db.prepare(`
+      DELETE FROM token_blacklist 
+      WHERE expires_at < datetime('now')
+    `).run();
+    
+    if (expiredTokens.changes > 0) {
+      logger.debug(`Removidos ${expiredTokens.changes} tokens expirados da blacklist`);
+    }
+    
+    const blacklisted = db.prepare(`
+      SELECT id FROM token_blacklist 
+      WHERE token_hash = ? AND expires_at > datetime('now')
+    `).get(tokenHash);
+    
+    return !!blacklisted;
+  } catch (error) {
+    logger.error('Erro ao verificar blacklist de tokens:', error);
+    return false;
+  }
+}
+
+function addTokenToBlacklist(token) {
+  try {
+    const decoded = jwt.decode(token);
+    if (!decoded || !decoded.exp) {
+      return false;
+    }
+    
+    const tokenHash = hashToken(token);
+    const expiresAt = new Date(decoded.exp * 1000).toISOString();
+    
+    const db = getConnection();
+    const result = db.prepare(`
+      INSERT INTO token_blacklist (token_hash, expires_at)
+      VALUES (?, ?)
+    `).run(tokenHash, expiresAt);
+    
+    return result.changes > 0;
+  } catch (error) {
+    logger.error('Erro ao adicionar token à blacklist:', error);
+    return false;
+  }
 }
 
 router.post('/login', validateLogin, async (req, res) => {
@@ -100,6 +153,14 @@ export function authenticateToken(req, res, next) {
     });
   }
 
+  const tokenHash = hashToken(token);
+  if (isTokenBlacklisted(tokenHash)) {
+    return res.status(403).json({
+      success: false,
+      message: 'Token inválido ou expirado',
+    });
+  }
+
   jwt.verify(token, JWT_SECRET, (err, user) => {
     if (err) {
       return res.status(403).json({
@@ -111,6 +172,35 @@ export function authenticateToken(req, res, next) {
     next();
   });
 }
+
+router.post('/logout', (req, res) => {
+  try {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    
+    if (token) {
+      try {
+        jwt.verify(token, JWT_SECRET);
+        addTokenToBlacklist(token);
+        const decoded = jwt.decode(token);
+        logger.info(`Token invalidado para usuário: ${decoded?.username || 'desconhecido'}`);
+      } catch (err) {
+        logger.debug('Token já estava inválido ou expirado durante logout');
+      }
+    }
+    
+    res.json({
+      success: true,
+      message: 'Logout realizado com sucesso',
+    });
+  } catch (error) {
+    logger.error('Erro no logout:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro interno do servidor',
+    });
+  }
+});
 
 export default router;
 

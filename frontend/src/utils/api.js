@@ -74,3 +74,16 @@ export async function insertMovie(movieData) {
   return response;
 }
 
+export async function logout() {
+  try {
+    await apiRequest('/auth/logout', {
+      method: 'POST',
+    });
+  } catch (error) {
+    console.error('Erro ao fazer logout:', error);
+  } finally {
+    localStorage.removeItem('tmdb:token');
+    localStorage.removeItem('tmdb:user');
+  }
+}
+

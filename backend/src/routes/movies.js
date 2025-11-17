@@ -2,7 +2,7 @@ import express from 'express';
 import { body, query, validationResult } from 'express-validator';
 import { authenticateToken } from './auth.js';
 import { Movie } from '../models/Movie.js';
-import { logSearch } from '../config/logger.js';
+import { logSearch, logInsert } from '../config/logger.js';
 import { getConnection } from '../config/database.js';
 import { getSearchCache, setSearchCache, clearCache } from '../config/cache.js';
 import { logger } from '../config/logger.js';
@@ -171,6 +171,30 @@ const validateInsert = [
     .isFloat({ min: 0, max: 10 }).withMessage('Nota média deve ser um número entre 0 e 10'),
 ];
 
+function retryDatabaseOperation(operation, maxRetries = 3, delay = 200) {
+  return new Promise((resolve, reject) => {
+    let attempts = 0;
+    
+    function attempt() {
+      try {
+        const result = operation();
+        resolve(result);
+      } catch (error) {
+        attempts++;
+        if (error.message && (error.message.includes('locked') || error.message.includes('SQLITE_BUSY')) && attempts < maxRetries) {
+          setTimeout(() => {
+            attempt();
+          }, delay * attempts);
+        } else {
+          reject(error);
+        }
+      }
+    }
+    
+    attempt();
+  });
+}
+
 router.post('/insert', validateInsert, async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -182,7 +206,6 @@ router.post('/insert', validateInsert, async (req, res) => {
       });
     }
 
-    const db = getConnection();
     const userId = req.user.userId;
 
     const movieData = {
@@ -194,19 +217,22 @@ router.post('/insert', validateInsert, async (req, res) => {
       vote_average: req.body.vote_average ? parseFloat(req.body.vote_average) : null,
     };
 
-    const existingMovie = await Movie.findByTmdbId(movieData.id);
-    if (existingMovie) {
-      return res.status(409).json({
-        success: false,
-        message: 'Filme já cadastrado no sistema',
-      });
-    }
+    const movieId = await retryDatabaseOperation(() => {
+      const db = getConnection();
+      
+      const existingMovie = Movie.findByTmdbId(movieData.id, db);
+      if (existingMovie) {
+        throw new Error('FILME_EXISTENTE');
+      }
 
-    const movieId = await Movie.create(movieData, userId);
+      const newMovieId = Movie.create(movieData, userId, db);
+      return newMovieId;
+    });
 
     clearCache('search:');
     
     logger.info(`Filme inserido: ${movieData.title} (ID: ${movieId})`);
+    logInsert(userId, movieId, movieData.title, true, null, req);
 
     res.status(201).json({
       success: true,
@@ -215,6 +241,17 @@ router.post('/insert', validateInsert, async (req, res) => {
     });
   } catch (error) {
     logger.error('Erro ao inserir filme:', error);
+    
+    const errorMessage = error.message || 'Erro desconhecido';
+    logInsert(req.user?.userId || null, null, req.body?.title || null, false, errorMessage, req);
+    
+    if (error.message === 'FILME_EXISTENTE') {
+      return res.status(409).json({
+        success: false,
+        message: 'Filme já cadastrado no sistema',
+      });
+    }
+    
     res.status(500).json({
       success: false,
       message: 'Erro ao inserir filme',
