@@ -33,8 +33,7 @@ router.post('/login', validateLogin, async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      const db = getConnection();
-      logAuth(req.body.username, false, req, db);
+      logAuth(req.body.username, false, req);
       return res.status(400).json({
         success: false,
         message: 'Erro de validação',
@@ -46,10 +45,9 @@ router.post('/login', validateLogin, async (req, res) => {
     const password = req.body.password;
 
     const user = await User.findByUsername(username);
-    const db = getConnection();
     
     if (!user) {
-      logAuth(username, false, req, db);
+      logAuth(username, false, req);
       return res.status(401).json({
         success: false,
         message: 'Credenciais inválidas',
@@ -58,7 +56,7 @@ router.post('/login', validateLogin, async (req, res) => {
 
     const isValidPassword = await User.validatePassword(password, user.password);
     if (!isValidPassword) {
-      logAuth(username, false, req, db);
+      logAuth(username, false, req);
       return res.status(401).json({
         success: false,
         message: 'Credenciais inválidas',
@@ -71,7 +69,7 @@ router.post('/login', validateLogin, async (req, res) => {
       { expiresIn: JWT_EXPIRES_IN }
     );
 
-    logAuth(username, true, req, db);
+    logAuth(username, true, req);
 
     res.json({
       success: true,

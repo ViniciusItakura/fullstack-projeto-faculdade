@@ -1,6 +1,7 @@
 import { writeFileSync, appendFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { getConnection } from './database.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -61,39 +62,100 @@ export function logSecurityEvent(type, details) {
   }
 }
 
-export function logAuth(username, success, req, db) {
-  const insertLog = db.prepare(`
-    INSERT INTO auth_logs (username, success, ip_address, user_agent)
-    VALUES (?, ?, ?, ?)
-  `);
-  
-  insertLog.run(
-    username || null,
-    success ? 1 : 0,
-    req.ip || req.headers['x-forwarded-for'] || 'unknown',
-    req.get('user-agent') || 'unknown'
-  );
+export function logAuth(username, success, req) {
+  const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+  const userAgent = req.get('user-agent') || 'unknown';
   
   logSecurityEvent('AUTH_ATTEMPT', {
     username,
     success,
-    ip: req.ip,
-    userAgent: req.get('user-agent'),
+    ip,
+    userAgent,
+  });
+  
+  setImmediate(() => {
+    try {
+      const logDb = getConnection();
+      const insertLog = logDb.prepare(`
+        INSERT INTO auth_logs (username, success, ip_address, user_agent)
+        VALUES (?, ?, ?, ?)
+      `);
+      
+      insertLog.run(
+        username || null,
+        success ? 1 : 0,
+        ip,
+        userAgent
+      );
+    } catch (error) {
+      if (error.message && error.message.includes('locked')) {
+        setTimeout(() => {
+          try {
+            const retryDb = getConnection();
+            const insertLog = retryDb.prepare(`
+              INSERT INTO auth_logs (username, success, ip_address, user_agent)
+              VALUES (?, ?, ?, ?)
+            `);
+            insertLog.run(
+              username || null,
+              success ? 1 : 0,
+              ip,
+              userAgent
+            );
+          } catch (retryError) {
+            logger.warn('Falha ao registrar log de autenticação após retry:', retryError.message);
+          }
+        }, 200);
+      } else {
+        logger.warn('Erro ao registrar log de autenticação:', error.message);
+      }
+    }
   });
 }
 
-export function logSearch(userId, query, resultsCount, req, db) {
-  const insertLog = db.prepare(`
-    INSERT INTO search_logs (user_id, query, results_count, ip_address, user_agent)
-    VALUES (?, ?, ?, ?, ?)
-  `);
+export function logSearch(userId, query, resultsCount, req) {
+  const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+  const userAgent = req.get('user-agent') || 'unknown';
   
-  insertLog.run(
-    userId || null,
-    query,
-    resultsCount || 0,
-    req.ip || req.headers['x-forwarded-for'] || 'unknown',
-    req.get('user-agent') || 'unknown'
-  );
+  setImmediate(() => {
+    try {
+      const logDb = getConnection();
+      const insertLog = logDb.prepare(`
+        INSERT INTO search_logs (user_id, query, results_count, ip_address, user_agent)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+      
+      insertLog.run(
+        userId || null,
+        query,
+        resultsCount || 0,
+        ip,
+        userAgent
+      );
+    } catch (error) {
+      if (error.message && error.message.includes('locked')) {
+        setTimeout(() => {
+          try {
+            const retryDb = getConnection();
+            const insertLog = retryDb.prepare(`
+              INSERT INTO search_logs (user_id, query, results_count, ip_address, user_agent)
+              VALUES (?, ?, ?, ?, ?)
+            `);
+            insertLog.run(
+              userId || null,
+              query,
+              resultsCount || 0,
+              ip,
+              userAgent
+            );
+          } catch (retryError) {
+            logger.warn('Falha ao registrar log de busca após retry:', retryError.message);
+          }
+        }, 200);
+      } else {
+        logger.warn('Erro ao registrar log de busca:', error.message);
+      }
+    }
+  });
 }
 

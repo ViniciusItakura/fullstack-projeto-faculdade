@@ -68,8 +68,7 @@ router.get('/search', validateSearch, async (req, res) => {
     const cachedResult = getSearchCache(cacheKey);
     if (cachedResult) {
       logger.info(`Cache hit para busca: ${searchQuery}`);
-      const db = getConnection();
-      logSearch(req.user.userId, searchQuery, cachedResult.results?.length || 0, req, db);
+      logSearch(req.user.userId, searchQuery, cachedResult.results?.length || 0, req);
       return res.json(cachedResult);
     }
 
@@ -125,8 +124,7 @@ router.get('/search', validateSearch, async (req, res) => {
 
     setSearchCache(cacheKey, responseData);
 
-    const db = getConnection();
-    logSearch(req.user.userId, searchQuery, results.length, req, db);
+    logSearch(req.user.userId, searchQuery, results.length, req);
 
     res.json(responseData);
   } catch (error) {

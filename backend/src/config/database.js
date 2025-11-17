@@ -7,7 +7,7 @@ import bcrypt from 'bcryptjs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const POOL_SIZE = 10;
+const POOL_SIZE = 5;
 const connectionPool = [];
 let currentConnectionIndex = 0;
 
@@ -17,12 +17,14 @@ function createConnectionPool() {
       verbose: process.env.NODE_ENV === 'development' 
         ? (sql) => logger.debug('SQL:', sql) 
         : null,
+      timeout: 5000,
     });
     
     db.pragma('journal_mode = WAL');
     db.pragma('synchronous = NORMAL');
     db.pragma('cache_size = 10000');
     db.pragma('foreign_keys = ON');
+    db.pragma('busy_timeout = 5000');
     
     connectionPool.push(db);
   }
