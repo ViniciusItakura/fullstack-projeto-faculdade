@@ -1,21 +1,15 @@
 {
-  "name": "tmdb-app-vinicius",
-  "private": true,
-  "version": "0.0.1",
-  "type": "module",
+  "name": "fullstack-faculdade",
+  "version": "1.0.0",
+  "description": "Projeto Fullstack - CineVinicius",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "install:all": "npm install && cd backend && npm install && cd ../frontend && npm install",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "build:frontend": "cd frontend && npm run build",
+    "start:backend": "cd backend && npm start"
   },
-  "dependencies": {
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-bootstrap": "^2.10.10",
-    "bootstrap": "^5.3.3"
-  },
-  "devDependencies": {
-    "@vitejs/plugin-react": "^4.3.1",
-    "vite": "^5.4.8"
-  }
+  "keywords": [],
+  "author": "Vinicius Enrique Pinheiro Itakura",
+  "license": "ISC"
 }
